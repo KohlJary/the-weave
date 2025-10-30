@@ -25,16 +25,21 @@ services:
     container_name: weave-bridge
     restart: unless-stopped
     working_dir: /app
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
     command: >
       bash -lc "
-        pip install --no-cache-dir fastapi uvicorn pyyaml jsonschema &&
+        pip install --no-cache-dir fastapi httpx uvicorn pyyaml jsonschema &&
         # (optional) uncomment if you want /gpu/health to use torch:
         # pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu ||
         true &&
-        uvicorn scripts.bridge_api:app --host 0.0.0.0 --port 8787
+        uvicorn orchestrator:app --host 0.0.0.0 --port 8787
       "
     volumes:
-      - ./weave_root:/app:rw
+      - ./weave_root/scripts/orchestrator.py:/app/orchestrator.py:ro
+      - ./weave_root:/weave:rw
+      - ./weave_root/prompts/hfca.md:/weave/prompts/hfca.md:ro
+      - ./weave_root/prompts/voices.json:/weave/prompts/voices.json:ro
     ports:
       - "8787:8787"
     networks:
