@@ -1,0 +1,57 @@
+version: "3.9"
+
+name: weave_stack
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: open-webui
+    restart: unless-stopped
+    ports: ["3000:8080"]
+    environment:
+      - BRIDGE_URL=http://bridge:8787
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OPEN_WEBUI_DATA_DIR=/weave/open-webui-data
+      - DATA_DIR=/weave/open-webui-data
+    volumes:
+      - ./weave_root:/weave:rw
+      - ./weave_root/open-webui-data:/weave/open-webui-data:rw
+    depends_on: [bridge, ollama]
+    networks: [weave_net]
+    gpus: all
+
+  bridge:
+    image: python:3.11-slim
+    container_name: weave-bridge
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      bash -lc "
+        pip install --no-cache-dir fastapi uvicorn pyyaml jsonschema &&
+        # (optional) uncomment if you want /gpu/health to use torch:
+        # pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu ||
+        true &&
+        uvicorn scripts.bridge_api:app --host 0.0.0.0 --port 8787
+      "
+    volumes:
+      - ./weave_root:/app:rw
+    ports:
+      - "8787:8787"
+    networks:
+      - weave_net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment: ["OLLAMA_ORIGINS=*"]
+    volumes: ["ollama:/root/.ollama"]
+    ports: ["11434:11434"]
+    networks: [weave_net]
+    gpus: all
+
+networks:
+  weave_net: { driver: bridge }
+
+volumes:
+  ollama: { driver: local }

@@ -1,0 +1,12 @@
+{
+  "state": "OK",
+  "counters": {
+    "ticks": 0,
+    "ingested": 0
+  },
+  "ewma": {
+    "load": 0.0,
+    "drift": 0.0
+  },
+  "alerts": []
+}

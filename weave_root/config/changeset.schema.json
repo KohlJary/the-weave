@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Weave Changeset",
+  "type": "object",
+  "required": [
+    "version",
+    "title",
+    "description",
+    "notes",
+    "changes"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "description": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "write"
+              },
+              "write": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "content"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "write"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "patch"
+              },
+              "patch": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "before",
+                  "after"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "before": {
+                    "type": "string"
+                  },
+                  "after": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "patch"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "rename"
+              },
+              "rename": {
+                "type": "object",
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "rename"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "delete"
+              },
+              "delete": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "delete"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

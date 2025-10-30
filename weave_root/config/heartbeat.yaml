@@ -1,0 +1,18 @@
+interval_seconds: 900        # 15 minutes
+max_reflection_tokens: 256   # hard cap for LLM summary
+archive_rotation: monthly
+pin_condense_days: 7
+allowlist_paths:
+  - ./drafts
+  - ./proposals
+  - ./ledger
+  - ./pins
+halt_flag: ./HALT
+recent_ledger_tail_lines: 200
+pins_context_limit: 100
+alert_thresholds:
+  drift_ewma_max: 0.65
+  load_ewma_max: 0.80
+log:
+  file: ./heartbeat.log
+  level: INFO

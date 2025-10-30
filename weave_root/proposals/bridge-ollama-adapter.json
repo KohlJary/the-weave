@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "title": "feat(bridge): add ollama adapter endpoints",
+  "description": "Add /llm/ollama/{tags,generate} to translate Ollama responses to CI-friendly format.",
+  "notes": "Fixes connectivity/API mismatch for Run CI HTTP mode.",
+  "changes": [
+    {
+      "kind": "patch",
+      "patch": {
+        "path": "scripts/bridge_api.py",
+        "before": "app = FastAPI(title=\"Weave Bridge API\")",
+        "after": "app = FastAPI(title=\"Weave Bridge API\")\n\n# --- Ollama Adapter (simple) ---\nfrom typing import Optional\nimport urllib.request\nOLLAMA_URL = os.environ.get(\"OLLAMA_URL\", \"http://ollama:11434\")\n\n@app.get(\"/llm/ollama/tags\")\nasync def ollama_tags():\n    with urllib.request.urlopen(f\"{OLLAMA_URL}/api/tags\") as resp:\n        return json.loads(resp.read().decode(\"utf-8\"))\n\nclass OllamaGen(BaseModel):\n    model: Optional[str] = \"phi3:mini\"\n    prompt: str\n    stream: bool = False\n\n@app.post(\"/llm/ollama/generate\")\nasync def ollama_generate(body: OllamaGen):\n    req = urllib.request.Request(\n        f\"{OLLAMA_URL}/api/generate\",\n        data=json.dumps({\n            \"model\": body.model,\n            \"prompt\": body.prompt,\n            \"stream\": body.stream\n        }).encode(\"utf-8\"),\n        headers={\"Content-Type\": \"application/json\"}\n    )\n    with urllib.request.urlopen(req, timeout=60) as resp:\n        data = json.loads(resp.read().decode(\"utf-8\"))\n        # Normalize to what ritual_ci expects\n        return {\"text\": data.get(\"response\", \"\")}"},
+      "kind": "patch"
+    }
+  ]
+}
