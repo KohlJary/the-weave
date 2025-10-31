@@ -4,11 +4,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 import json
 import uuid
+import re
 from typing import Any, Optional
 
 SESSIONS_ROOT = Path("/weave/sessions")
 SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
 
+KEEP_PREFIX = "### Task:\nRespond to the user query"
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -126,3 +128,47 @@ def list_sessions(status: Optional[str] = None) -> list[dict]:
             continue
         out.append(m)
     return out
+
+def extract_final_assistant(entry: dict) -> str | None:
+    fv = entry.get("final_voice")
+    if not fv:
+        return None
+    for v in entry.get("voices", []):
+        if v.get("voice") == fv:
+            return v.get("content")
+    return None
+
+def promote_logs_to_messages(session_id: str):
+    sdir = _session_dir(session_id)
+    logs_path = sdir / "logs.jsonl"
+    msgs_path = sdir / "messages.jsonl"
+
+    if not logs_path.exists():
+        return
+
+    with logs_path.open() as f:
+        lines = f.readlines()
+
+    out_lines = []
+    for line in lines:
+        entry = json.loads(line)
+        inp = entry.get("input", "")
+        if not inp.startswith(KEEP_PREFIX):
+            # skip analyzer / followups
+            continue
+
+        # extract user turn from the big blob, if present
+        user_text = None
+        m = re.findall(r"User:\s*(.+)", inp)
+        if m:
+            # take the last USER: in the block
+            user_text = m[-1].strip()
+
+        assistant_text = extract_final_assistant(entry)
+        if user_text:
+            out_lines.append(json.dumps({"role": "user", "content": user_text}))
+        if assistant_text:
+            out_lines.append(json.dumps({"role": "assistant", "content": assistant_text,
+                                         "turn_id": entry.get("turn_id")}))
+
+    msgs_path.write_text("\n".join(out_lines) + "\n")

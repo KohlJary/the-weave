@@ -13,6 +13,8 @@ from session_manager import (
     load_session,
     update_session_context,
     append_session_log,
+    extract_final_assistant,
+    promote_logs_to_messages
 )
 
 app = FastAPI(title="Compass Orchestrator")
@@ -63,19 +65,6 @@ class TurnOut(BaseModel):
     voices: list[VoiceOutput]
     ledger_appended: bool
     session_id: str
-
-def extract_session_from_messages(messages):
-    # look through system/assistant messages for a marker
-    for m in messages:
-        if m.get("role") in ("system", "assistant"):
-            content = m.get("content", "")
-            if SESSION_MARKER in content:
-                # e.g. "COMPASS-SESSION: 1234-..."
-                parts = content.split(SESSION_MARKER, 1)[1].strip()
-                # take first token as id
-                sid = parts.split()[0]
-                return sid
-    return None
 
 def is_toolish_input(text: str) -> bool:
     if not text:
@@ -218,17 +207,22 @@ async def call_llm(prompt: str) -> str:
         return "[orchestrator] LLM backend is slow or missing — returning orchestrator-level reply."
     
 def extract_session_id_from_messages(messages: list[dict]) -> str | None:
-    # look for a system/meta message carrying a session/conversation id
+    """
+    Looks through ALL messages (user, system, assistant) and returns
+    the LAST COMPASS-SESSION: ... found in the content blob.
+    This works with Open-WebUI, which inlines chat history into a single user message.
+    """
+    found_ids: list[str] = []
+    pattern = re.compile(rf"{SESSION_MARKER}\s*([0-9a-fA-F-]+)")
     for m in messages:
-        if m.get("role") == "system":
-            # pattern 1: explicit key in content (you can adjust this to your format)
-            content = m.get("content") or ""
-            if "COMPASS-SESSION:" in content:
-                return content.split("COMPASS-SESSION:")[1].strip()
-            # pattern 2: name-based
-            if m.get("name") in ("session_id", "conversation_id"):
-                return content.strip()
-    return None
+        content = m.get("content") or ""
+        # find ALL markers in this message
+        for match in pattern.findall(content):
+            found_ids.append(match.strip())
+    if not found_ids:
+        return None
+    # return the most recent one
+    return found_ids[-1]
 
 def load_recent_session_context(session_id: str, n: int = 5) -> list[str]:
     """Load the last n conversational turns from this session for short-term recall."""
@@ -238,11 +232,11 @@ def load_recent_session_context(session_id: str, n: int = 5) -> list[str]:
         return []
     lines = log_path.read_text(encoding="utf-8").splitlines()[-n:]
     turns = []
-    for l in lines:
+    for l in reversed(lines):
         try:
             t = json.loads(l)
             user_text = t.get("input", "")
-            chosen_voice = t.get("chosen", {}).get("voice", "assistant")
+            chosen_voice = t.get("chosen", {}).get("role", "assistant")
             chosen_content = t.get("chosen", {}).get("content", "")
             turns.append(f"User: {user_text}\n{chosen_voice}: {chosen_content}")
         except Exception as e:
@@ -271,7 +265,9 @@ def build_enriched_context(
                 parts.append("recent_session_turns=\n" + "\n---\n".join(prior))
     if rag_context:
         parts.append("rag_context=" + rag_context)
-    return "\n".join(parts)
+    output = "\n".join(parts)
+    print(f"[orchestratior] enriched context:\n{output}")
+    return output
 
 def build_voice_prompt(hfca: str, voice_md: str, turn: TurnIn, enriched: str) -> str:
     sections = [
@@ -348,6 +344,7 @@ async def run_turn(turn: TurnIn):
         "voices": [o.model_dump() for o in outputs],
     }
     append_session_log(turn.session_id, session_log_entry)
+    promote_logs_to_messages(turn.session_id)
 
     # also update session context with lightweight state
     update_session_context(
@@ -381,17 +378,16 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def openai_chat(payload: dict):
+    print(f"[orchestrator] payload:\n{payload}")
     messages = payload.get("messages", [])
     user_msg = ""
     rag = []
     session_id = None
 
     # 1) try to get a session from top-level first
-    session_id = (
-        payload.get("session_id")
-        or payload.get("conversation_id")
-        or None
-    )
+    session_id = payload.get("session_id") or payload.get("conversation_id")
+    if not session_id:
+        session_id = extract_session_id_from_messages(payload.get("messages") or [])
 
     # 2) walk messages
     for m in messages:
@@ -404,11 +400,6 @@ async def openai_chat(payload: dict):
             # also try to spot an embedded session
             if not session_id and "COMPASS-SESSION:" in (m.get("content") or ""):
                 session_id = m["content"].split("COMPASS-SESSION:")[1].strip()
-
-    # 3) fallback: try to derive session from messages if still None
-    if not session_id:
-        # last chance: look for system/meta messages
-        session_id = extract_session_id_from_messages(messages)
 
     turn_in = TurnIn(
         text=user_msg,
