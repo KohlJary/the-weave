@@ -37,6 +37,7 @@ services:
       "
     volumes:
       - ./weave_root/scripts/orchestrator.py:/app/orchestrator.py:ro
+      - ./weave_root/scripts/session_manager.py:/app/session_manager.py:ro
       - ./weave_root:/weave:rw
       - ./weave_root/prompts/hfca.md:/weave/prompts/hfca.md:ro
       - ./weave_root/prompts/voices.json:/weave/prompts/voices.json:ro
